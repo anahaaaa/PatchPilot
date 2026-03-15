@@ -18,7 +18,6 @@ def unzip_to_dir(zip_path: Path, out_dir: Path) -> None:
     with zipfile.ZipFile(zip_path, "r") as z:
         z.extractall(out_dir)
 
-    # If zip contains a single top-level folder, flatten it for nicer paths
     children = list(out_dir.iterdir())
     if len(children) == 1 and children[0].is_dir():
         top = children[0]

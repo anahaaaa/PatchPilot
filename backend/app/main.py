@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
-import shutil
+import re
 import tempfile
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import List
 
+import httpx
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -23,7 +24,7 @@ app = FastAPI(title="PatchPilot API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # hackathon MVP
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,6 +37,71 @@ ensure_dir(WORK_ROOT)
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+def _prioritize_findings(findings: List[Finding]) -> List[Finding]:
+    def score(f: Finding) -> int:
+        sev = {"CRITICAL": 100, "HIGH": 80, "MEDIUM": 50, "LOW": 20, "INFO": 5}.get(f.severity, 10)
+        tw = {"dependency": 25, "secret": 35, "sast": 20}.get(f.category, 10)
+        return sev + tw
+
+    return sorted(findings, key=score, reverse=True)
+
+
+def _scan_repo_dir(repo_dir: Path):
+    semgrep = run_semgrep(repo_dir)
+    osv = run_osv_scanner(repo_dir)
+    gitleaks = run_gitleaks(repo_dir)
+
+    findings: List[Finding] = []
+    findings.extend(semgrep)
+    findings.extend(osv)
+    findings.extend(gitleaks)
+
+    findings = _prioritize_findings(findings)
+
+    return semgrep, osv, gitleaks, findings
+
+
+def github_zip_url(repo_url: str, ref: str = "main") -> str:
+    """
+    Convert a GitHub repo URL like:
+      https://github.com/owner/repo
+      https://github.com/owner/repo.git
+    into a ZIP download URL:
+      https://github.com/owner/repo/archive/refs/heads/<ref>.zip
+    """
+    repo_url = repo_url.strip()
+    m = re.match(r"^https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", repo_url, re.IGNORECASE)
+    if not m:
+        raise HTTPException(status_code=400, detail="Only GitHub repo URLs are supported right now.")
+    owner, repo = m.group(1), m.group(2)
+    return f"https://github.com/{owner}/{repo}/archive/refs/heads/{ref}.zip"
+
+
+async def download_to_path(url: str, dest_path: Path) -> None:
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    timeout = httpx.Timeout(120.0, connect=30.0)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        r = await client.get(url)
+        if r.status_code != 200:
+            raise HTTPException(status_code=400, detail=f"Failed to download repo ZIP ({r.status_code}).")
+        dest_path.write_bytes(r.content)
+
+
+def _maybe_use_single_top_folder(repo_dir: Path) -> Path:
+    """
+    GitHub ZIPs typically extract into a single directory like <repo>-main/.
+    If that happens, point scanners at that inner directory.
+    """
+    try:
+        children = [p for p in repo_dir.iterdir() if p.is_dir()]
+    except FileNotFoundError:
+        return repo_dir
+
+    if len(children) == 1:
+        return children[0]
+    return repo_dir
 
 
 @app.post("/scan", response_model=ScanResponse)
@@ -60,28 +126,57 @@ async def scan(
         safe_rmtree(job_dir)
         raise HTTPException(status_code=400, detail=f"Invalid zip upload: {e}")
 
-    # run scanners
-    semgrep = run_semgrep(repo_dir)
-    osv = run_osv_scanner(repo_dir)
-    gitleaks = run_gitleaks(repo_dir)
+    scan_root = _maybe_use_single_top_folder(repo_dir)
 
-    findings: List[Finding] = []
-    findings.extend(semgrep)
-    findings.extend(osv)
-    findings.extend(gitleaks)
-
-    # naive prioritization score: severity + type weights
-    def score(f: Finding) -> int:
-        sev = {"CRITICAL": 100, "HIGH": 80, "MEDIUM": 50, "LOW": 20, "INFO": 5}.get(f.severity, 10)
-        tw = {"dependency": 25, "secret": 35, "sast": 20}.get(f.category, 10)
-        return sev + tw
-
-    findings = sorted(findings, key=score, reverse=True)
+    semgrep, osv, gitleaks, findings = _scan_repo_dir(scan_root)
 
     return ScanResponse(
         job_id=job_id,
         project_name=project_name,
-        repo_path=str(repo_dir),
+        repo_path=str(scan_root),
+        findings=findings,
+        scanners={
+            "semgrep": {"ok": True, "count": len(semgrep)},
+            "osv": {"ok": True, "count": len(osv)},
+            "gitleaks": {"ok": True, "count": len(gitleaks)},
+        },
+    )
+
+
+@app.post("/scan-url", response_model=ScanResponse)
+async def scan_url(
+    repo_url: str = Form(...),
+    ref: str = Form("main"),
+    project_name: str = Form("project"),
+):
+    job_id = next(tempfile._get_candidate_names())
+    job_dir = WORK_ROOT / job_id
+    ensure_dir(job_dir)
+
+    archive_path = job_dir / "repo.zip"
+    repo_dir = job_dir / "repo"
+    ensure_dir(repo_dir)
+
+    zip_url = github_zip_url(repo_url, ref=ref)
+
+    try:
+        await download_to_path(zip_url, archive_path)
+        unzip_to_dir(archive_path, repo_dir)
+    except HTTPException:
+        safe_rmtree(job_dir)
+        raise
+    except Exception as e:
+        safe_rmtree(job_dir)
+        raise HTTPException(status_code=400, detail=f"Import from URL failed: {e}")
+
+    scan_root = _maybe_use_single_top_folder(repo_dir)
+
+    semgrep, osv, gitleaks, findings = _scan_repo_dir(scan_root)
+
+    return ScanResponse(
+        job_id=job_id,
+        project_name=project_name,
+        repo_path=str(scan_root),
         findings=findings,
         scanners={
             "semgrep": {"ok": True, "count": len(semgrep)},
@@ -98,6 +193,7 @@ def fix(req: FixRequest):
     if not repo_dir.exists():
         raise HTTPException(status_code=404, detail="Unknown job_id")
 
+    repo_dir = _maybe_use_single_top_folder(repo_dir)
     fixes = propose_fixes(repo_dir, req.finding_ids)
 
     return FixResponse(job_id=req.job_id, fixes=fixes)
@@ -110,6 +206,7 @@ def verify(job_id: str = Form(...)):
     if not repo_dir.exists():
         raise HTTPException(status_code=404, detail="Unknown job_id")
 
+    repo_dir = _maybe_use_single_top_folder(repo_dir)
     result = verify_repo(repo_dir)
     return result
 
@@ -120,6 +217,8 @@ def evidence_pack(job_id: str = Form(...), project_name: str = Form("project")):
     repo_dir = job_dir / "repo"
     if not repo_dir.exists():
         raise HTTPException(status_code=404, detail="Unknown job_id")
+
+    repo_dir = _maybe_use_single_top_folder(repo_dir)
 
     out_dir = job_dir / "out"
     ensure_dir(out_dir)

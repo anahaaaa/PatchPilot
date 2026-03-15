@@ -8,11 +8,9 @@ from ..utils.exec import run_cmd
 
 
 def run_osv_scanner(repo_dir: Path) -> List[Finding]:
-    # OSV-Scanner v2.x: JSON output is controlled by --format json under the `scan` command.
     cmd = ["osv-scanner", "scan", "--format", "json", "--recursive", "."]
     r = run_cmd(cmd, cwd=repo_dir, timeout_s=600)
 
-    # osv-scanner may return nonzero if vulnerabilities found; still parse stdout if present
     if not r.get("stdout"):
         if r.get("stderr"):
             return [Finding(

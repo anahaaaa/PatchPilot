@@ -12,7 +12,6 @@ class CmdResult(dict):
 
 def run_cmd(cmd: List[str], cwd: Path, timeout_s: int = 300) -> CmdResult:
     env = os.environ.copy()
-    # Force UTF-8 so tools like semgrep don't crash on Windows cp1252.
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
 

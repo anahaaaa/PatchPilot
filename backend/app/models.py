@@ -12,8 +12,8 @@ class Location(BaseModel):
 
 class Finding(BaseModel):
     id: str
-    category: str  # "sast" | "dependency" | "secret"
-    severity: str  # "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO"
+    category: str  
+    severity: str  
     title: str
     description: str = ""
     location: Optional[Location] = None
@@ -30,7 +30,7 @@ class ScanResponse(BaseModel):
 
 class Fix(BaseModel):
     finding_id: str
-    status: str  # "applied" | "suggested" | "skipped" | "error"
+    status: str 
     summary: str
     files_changed: List[str] = Field(default_factory=list)
     diff: Optional[str] = None

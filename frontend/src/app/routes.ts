@@ -1,0 +1,17 @@
+import { createBrowserRouter } from "react-router";
+import { Root } from "./pages/root";
+import { Dashboard } from "./pages/dashboard";
+import { Findings } from "./pages/findings";
+import { Verify } from "./pages/verify";
+
+export const router = createBrowserRouter([
+  {
+    path: "/",
+    Component: Root,
+    children: [
+      { index: true, Component: Dashboard },
+      { path: "findings", Component: Findings },
+      { path: "verify", Component: Verify },
+    ],
+  },
+]);

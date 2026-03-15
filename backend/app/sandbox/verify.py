@@ -55,7 +55,6 @@ def verify_repo(repo_dir: Path) -> VerifyResponse:
             checks["npm"] = {"ok": False, "reason": "npm not found on PATH for backend process"}
             return VerifyResponse(ok=False, checks=checks)
 
-        # Install deps if needed
         if not _has_node_modules(repo_dir):
             has_lock = (repo_dir / "package-lock.json").exists() or (repo_dir / "npm-shrinkwrap.json").exists()
             if has_lock:
@@ -69,7 +68,6 @@ def verify_repo(repo_dir: Path) -> VerifyResponse:
                 if r_i.get("returncode") != 0:
                     return VerifyResponse(ok=False, checks=checks)
 
-        # Choose what to run
         try:
             pkg = _read_package_json(repo_dir)
         except Exception as e:
@@ -86,7 +84,6 @@ def verify_repo(repo_dir: Path) -> VerifyResponse:
                 "reason": "No test/lint/build script found in package.json scripts; skipping Node verification.",
                 "available_scripts": sorted(list(scripts.keys())),
             }
-            # Treat as OK for MVP (pipeline didn't break; just nothing to run)
             return VerifyResponse(ok=True, checks=checks)
 
         r = run_cmd([npm_path, *chosen], cwd=repo_dir, timeout_s=1200)
@@ -98,7 +95,6 @@ def verify_repo(repo_dir: Path) -> VerifyResponse:
         ok = r.get("returncode") == 0
         return VerifyResponse(ok=ok, checks=checks)
 
-    # Python projects
     if (repo_dir / "pyproject.toml").exists() or (repo_dir / "requirements.txt").exists():
         if shutil.which("pytest") is None:
             checks["pytest"] = {"ok": True, "skipped": True, "reason": "pytest not found; skipping"}
