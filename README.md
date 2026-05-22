@@ -1,6 +1,6 @@
 ﻿# PatchPilot
 
-PatchPilot is a lightweight security scanning and remediation MVP that lets you upload a codebase (ZIP) or import a GitHub repository URL, run multiple security scanners, and generate an evidence pack for reporting/compliance.
+PatchPilot is a lightweight security scanning and remediation project that lets you upload a codebase (ZIP) or import a GitHub repository URL, run multiple security scanners, and generate an evidence pack for reporting/compliance.
 
 What it does:
 
