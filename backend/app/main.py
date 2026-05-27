@@ -30,7 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-WORK_ROOT = Path(os.environ.get("PATCHPILOT_WORKDIR", Path(tempfile.gettempdir()) / "patchpilot"))
+WORK_ROOT = Path(
+    os.environ.get("PATCHPILOT_WORKDIR", Path(tempfile.gettempdir()) / "patchpilot")
+)
 ensure_dir(WORK_ROOT)
 
 
@@ -41,7 +43,9 @@ def health():
 
 def _prioritize_findings(findings: List[Finding]) -> List[Finding]:
     def score(f: Finding) -> int:
-        sev = {"CRITICAL": 100, "HIGH": 80, "MEDIUM": 50, "LOW": 20, "INFO": 5}.get(f.severity, 10)
+        sev = {"CRITICAL": 100, "HIGH": 80, "MEDIUM": 50, "LOW": 20, "INFO": 5}.get(
+            f.severity, 10
+        )
         tw = {"dependency": 25, "secret": 35, "sast": 20}.get(f.category, 10)
         return sev + tw
 
@@ -65,9 +69,13 @@ def _scan_repo_dir(repo_dir: Path):
 
 def github_zip_url(repo_url: str, ref: str = "main") -> str:
     repo_url = repo_url.strip()
-    m = re.match(r"^https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", repo_url, re.IGNORECASE)
+    m = re.match(
+        r"^https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", repo_url, re.IGNORECASE
+    )
     if not m:
-        raise HTTPException(status_code=400, detail="Only GitHub repo URLs are supported right now.")
+        raise HTTPException(
+            status_code=400, detail="Only GitHub repo URLs are supported right now."
+        )
     owner, repo = m.group(1), m.group(2)
     return f"https://github.com/{owner}/{repo}/archive/refs/heads/{ref}.zip"
 
@@ -78,7 +86,10 @@ async def download_to_path(url: str, dest_path: Path) -> None:
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         r = await client.get(url)
         if r.status_code != 200:
-            raise HTTPException(status_code=400, detail=f"Failed to download repo ZIP ({r.status_code}).")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to download repo ZIP ({r.status_code}).",
+            )
         dest_path.write_bytes(r.content)
 
 
@@ -218,8 +229,12 @@ def evidence_pack(job_id: str = Form(...), project_name: str = Form("project")):
     out_dir = job_dir / "out"
     ensure_dir(out_dir)
 
-    pack_path = build_evidence_pack(repo_dir=repo_dir, out_dir=out_dir, project_name=project_name, job_id=job_id)
-    return FileResponse(path=str(pack_path), filename=pack_path.name, media_type="application/zip")
+    pack_path = build_evidence_pack(
+        repo_dir=repo_dir, out_dir=out_dir, project_name=project_name, job_id=job_id
+    )
+    return FileResponse(
+        path=str(pack_path), filename=pack_path.name, media_type="application/zip"
+    )
 
 
 @app.delete("/jobs/{job_id}")

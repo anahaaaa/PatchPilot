@@ -6,7 +6,7 @@ from typing import List
 from ..models import Finding, Location
 from ..utils.exec import run_cmd
 
-SEMGRP_CONFIG = "p/ci" 
+SEMGRP_CONFIG = "p/ci"
 
 
 def run_semgrep(repo_dir: Path) -> List[Finding]:
@@ -14,13 +14,15 @@ def run_semgrep(repo_dir: Path) -> List[Finding]:
     r = run_cmd(cmd, cwd=repo_dir, timeout_s=600)
 
     if r["returncode"] not in (0, 1):
-        return [Finding(
-            id="semgrep:error",
-            category="sast",
-            severity="INFO",
-            title="Semgrep failed to run",
-            description=r["stderr"][:5000],
-        )]
+        return [
+            Finding(
+                id="semgrep:error",
+                category="sast",
+                severity="INFO",
+                title="Semgrep failed to run",
+                description=r["stderr"][:5000],
+            )
+        ]
 
     try:
         data = json.loads(r["stdout"] or "{}")
@@ -36,13 +38,17 @@ def run_semgrep(repo_dir: Path) -> List[Finding]:
         msg = (res.get("extra") or {}).get("message", "")
         severity = ((res.get("extra") or {}).get("severity") or "INFO").upper()
 
-        out.append(Finding(
-            id=f"semgrep:{check_id}:{path}:{start}",
-            category="sast",
-            severity=severity if severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO") else "INFO",
-            title=check_id,
-            description=msg,
-            location=Location(path=path, start_line=start, end_line=end),
-            metadata={"check_id": check_id, "engine": "semgrep"},
-        ))
+        out.append(
+            Finding(
+                id=f"semgrep:{check_id}:{path}:{start}",
+                category="sast",
+                severity=severity
+                if severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+                else "INFO",
+                title=check_id,
+                description=msg,
+                location=Location(path=path, start_line=start, end_line=end),
+                metadata={"check_id": check_id, "engine": "semgrep"},
+            )
+        )
     return out

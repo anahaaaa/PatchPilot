@@ -33,7 +33,6 @@ def run_osv_scanner(repo_dir: Path) -> List[Finding]:
     stderr = r.get("stderr") or ""
     returncode = r.get("returncode")
 
-
     if not stdout.strip():
         return []
 

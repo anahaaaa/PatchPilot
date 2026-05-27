@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Dict, Optional
-import difflib
+from typing import List
 
 from ..models import Fix
 from .templates import secret_remediation_note, dependency_upgrade_note
@@ -13,43 +12,51 @@ def propose_fixes(repo_dir: Path, finding_ids: List[str]) -> List[Fix]:
 
     for fid in finding_ids:
         if fid.startswith("gitleaks:"):
-            fixes.append(Fix(
-                finding_id=fid,
-                status="suggested",
-                summary="Secrets require rotation; PatchPilot provides safe remediation steps.",
-                files_changed=[],
-                diff=None,
-                notes=secret_remediation_note(),
-            ))
+            fixes.append(
+                Fix(
+                    finding_id=fid,
+                    status="suggested",
+                    summary="Secrets require rotation; PatchPilot provides safe remediation steps.",
+                    files_changed=[],
+                    diff=None,
+                    notes=secret_remediation_note(),
+                )
+            )
             continue
 
         if fid.startswith("osv:"):
-            fixes.append(Fix(
-                finding_id=fid,
-                status="suggested",
-                summary="Dependency vulnerabilities vary by ecosystem; PatchPilot suggests upgrade workflow.",
-                files_changed=[],
-                diff=None,
-                notes=dependency_upgrade_note(),
-            ))
+            fixes.append(
+                Fix(
+                    finding_id=fid,
+                    status="suggested",
+                    summary="Dependency vulnerabilities vary by ecosystem; PatchPilot suggests upgrade workflow.",
+                    files_changed=[],
+                    diff=None,
+                    notes=dependency_upgrade_note(),
+                )
+            )
             continue
 
         if fid.startswith("semgrep:"):
-            fixes.append(Fix(
-                finding_id=fid,
-                status="suggested",
-                summary="SAST finding detected; suggested remediation depends on code context.",
-                notes=[
-                    "For hackathon MVP, PatchPilot focuses on verified scanning + evidence generation.",
-                    "Next step: add ecosystem-specific fix templates (SQL injection, SSRF, command injection)."
-                ],
-            ))
+            fixes.append(
+                Fix(
+                    finding_id=fid,
+                    status="suggested",
+                    summary="SAST finding detected; suggested remediation depends on code context.",
+                    notes=[
+                        "For hackathon MVP, PatchPilot focuses on verified scanning + evidence generation.",
+                        "Next step: add ecosystem-specific fix templates (SQL injection, SSRF, command injection).",
+                    ],
+                )
+            )
             continue
 
-        fixes.append(Fix(
-            finding_id=fid,
-            status="skipped",
-            summary="Unsupported finding type.",
-        ))
+        fixes.append(
+            Fix(
+                finding_id=fid,
+                status="skipped",
+                summary="Unsupported finding type.",
+            )
+        )
 
     return fixes
