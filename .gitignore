@@ -47,7 +47,7 @@ out/
 *.p12
 
 # ───────────────────────────────────────────
-# ML model artifacts (never commit these)
+# ML model artifacts
 # ───────────────────────────────────────────
 *.pkl
 *.pt
