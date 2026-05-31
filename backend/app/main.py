@@ -75,10 +75,15 @@ def github_zip_url(repo_url: str, ref: str = "main"):
     )
     if not m:
         raise HTTPException(
-            status_code=422, detail="Invalid GitHub URL format. Expected: https://github.com/owner/repo"
+            status_code=422,
+            detail="Invalid GitHub URL format. Expected: https://github.com/owner/repo",
         )
     owner, repo = m.group(1), m.group(2)
-    return f"https://github.com/{owner}/{repo}/archive/refs/heads/{ref}.zip", owner, repo
+    return (
+        f"https://github.com/{owner}/{repo}/archive/refs/heads/{ref}.zip",
+        owner,
+        repo,
+    )
 
 
 async def check_repo_reachable(owner: str, repo: str) -> None:
@@ -89,18 +94,18 @@ async def check_repo_reachable(owner: str, repo: str) -> None:
             if r.status_code == 404:
                 raise HTTPException(
                     status_code=422,
-                    detail="Repository not found or is private. Check the URL and try again."
+                    detail="Repository not found or is private. Check the URL and try again.",
                 )
             if r.status_code != 200:
                 raise HTTPException(
                     status_code=422,
-                    detail=f"Repository not reachable (HTTP {r.status_code})."
+                    detail=f"Repository not reachable (HTTP {r.status_code}).",
                 )
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=422,
-            detail="Repository not found or is private. Check the URL and try again."
-)
+            detail="Repository not found or is private. Check the URL and try again.",
+        )
 
 
 async def download_to_path(url: str, dest_path: Path) -> None:
@@ -191,10 +196,7 @@ async def scan_url(
     await check_repo_reachable(owner, repo)
 
     try:
-        await asyncio.wait_for(
-            download_to_path(zip_url, archive_path),
-            timeout=30.0
-        )
+        await asyncio.wait_for(download_to_path(zip_url, archive_path), timeout=30.0)
         unzip_to_dir(archive_path, repo_dir)
     except asyncio.TimeoutError:
         safe_rmtree(job_dir)
