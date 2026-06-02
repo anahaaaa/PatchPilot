@@ -25,7 +25,14 @@ from .scanners.osv import run_osv_scanner
 from .scanners.semgrep import run_semgrep
 from .utils.fs import ensure_dir, safe_rmtree, unzip_to_dir
 
-MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", 100))
+_MAX_UPLOAD_MB_RAW = os.environ.get("MAX_UPLOAD_MB")
+
+try:
+    MAX_UPLOAD_MB = int(_MAX_UPLOAD_MB_RAW) if _MAX_UPLOAD_MB_RAW else 100
+except ValueError:
+    MAX_UPLOAD_MB = 100
+
+MAX_UPLOAD_MB = max(1, MAX_UPLOAD_MB)
 MAX_UPLOAD_SIZE = MAX_UPLOAD_MB * 1024 * 1024
 
 logger = logging.getLogger(__name__)
@@ -144,11 +151,17 @@ async def scan(
 ):
     content_length = request.headers.get("content-length")
 
-    if content_length and int(content_length) > MAX_UPLOAD_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large. Maximum upload size is {MAX_UPLOAD_MB}MB.",
-        )
+
+try:
+    content_length = int(content_length) if content_length else None
+except ValueError:
+    content_length = None
+
+if content_length and content_length > MAX_UPLOAD_SIZE:
+    raise HTTPException(
+        status_code=413,
+        detail=f"File too large. Maximum upload size is {MAX_UPLOAD_MB}MB.",
+    )
 
     job_id = next(tempfile._get_candidate_names())
     job_dir = WORK_ROOT / job_id
