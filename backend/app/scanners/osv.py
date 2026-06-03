@@ -78,10 +78,6 @@ def run_osv_scanner(repo_dir: Path) -> List[Finding]:
         pkg_name = finding.metadata.get("package", {}).get("name")
         if pkg_name:
             reachable, evidence = check_reachability(repo_dir, pkg_name)
-            finding.reachability = Reachability(
-                reachable=reachable,
-                evidence=evidence
-            )
+            finding.reachability = Reachability(reachable=reachable, evidence=evidence)
 
     return out
-    

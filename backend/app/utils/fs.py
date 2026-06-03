@@ -33,7 +33,16 @@ def unzip_to_dir(zip_path: Path, out_dir: Path) -> None:
 
 
 def check_reachability(repo_dir: Path, package_name: str) -> tuple[bool, str | None]:
-    ignore_dirs = {".git", "node_modules", "venv", "env", "__pycache__", "dist", "build", ".next"}
+    ignore_dirs = {
+        ".git",
+        "node_modules",
+        "venv",
+        "env",
+        "__pycache__",
+        "dist",
+        "build",
+        ".next",
+    }
     target_exts = {".js", ".jsx", ".ts", ".tsx", ".py", ".cjs", ".mjs"}
 
     patterns = [
@@ -41,7 +50,7 @@ def check_reachability(repo_dir: Path, package_name: str) -> tuple[bool, str | N
         rf"from\s+['\"]{re.escape(package_name)}['\"]",
         rf"import\s+['\"]{re.escape(package_name)}['\"]",
         rf"import\s+{re.escape(package_name)}\b",
-        rf"from\s+{re.escape(package_name)}\s+import"
+        rf"from\s+{re.escape(package_name)}\s+import",
     ]
     compiled_patterns = [re.compile(p) for p in patterns]
 
