@@ -36,6 +36,7 @@ def check_reachability(repo_dir: Path, package_name: str) -> tuple[bool, str | N
     ignore_dirs = {
         ".git",
         "node_modules",
+        ".venv",
         "venv",
         "env",
         "__pycache__",
