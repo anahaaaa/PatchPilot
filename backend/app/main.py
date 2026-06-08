@@ -260,8 +260,8 @@ async def scan(
                     None,
                     scanner,
                     message,
-                        pkg_name,
-                        pkg_version,
+                    pkg_name,
+                    pkg_version,
                 )
             )
         await db.executemany(
