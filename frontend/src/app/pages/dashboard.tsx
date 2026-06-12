@@ -269,8 +269,6 @@ export function Dashboard() {
         }
         
         setOrgStatusData(parsed);
-        
-        // Only close the stream if it's naturally completed, or if it's aborted AND no child jobs are still scanning
         const isFullyFinished = 
           ["completed", "failed"].includes(parsed.status) || 
           (parsed.status === "aborted" && !parsed.repos.some((r: any) => r.status === "scanning" || r.status === "pending"));

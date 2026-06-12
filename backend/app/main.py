@@ -997,17 +997,14 @@ async def get_org_status(org_job_id: str):
 
 @app.post("/api/scans/org/{org_job_id}/abort")
 async def abort_org_scan(org_job_id: str):
-    # Retry logic to handle SQLite DB locks under high concurrency
     for attempt in range(5):
         try:
             db = await get_db()
             try:
-                # 1. Mark the master job as aborted
                 await db.execute(
                     "UPDATE org_jobs SET status = 'aborted' WHERE id = ? AND status != 'completed'",
                     (org_job_id,),
                 )
-                # 2. Instantly kill all queued/pending repos to clear the UI
                 await db.execute(
                     "UPDATE jobs SET status = 'aborted' WHERE org_job_id = ? AND status = 'pending'",
                     (org_job_id,),
@@ -1017,7 +1014,6 @@ async def abort_org_scan(org_job_id: str):
             finally:
                 await db.close()
         except Exception as e:
-            # If the DB is locked by the workers, wait a second and try again
             if "locked" in str(e).lower() and attempt < 4:
                 await asyncio.sleep(1)
                 continue
@@ -1066,7 +1062,6 @@ async def stream_org_status(org_job_id: str):
             if org_row["status"] in ["completed", "failed"]:
                 break
 
-            # If aborted, keep the stream alive ONLY until the currently scanning repos finish their work
             if org_row["status"] == "aborted":
                 is_scanning = any(r["status"] == "scanning" for r in job_rows)
                 if not is_scanning:
