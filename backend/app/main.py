@@ -467,15 +467,33 @@ async def scan(
     if content_length and content_length > MAX_UPLOAD_SIZE:
         raise HTTPException(
             status_code=413,
-            detail=f"File too large. Maximum upload size is {MAX_UPLOAD_MB}MB.",
+            detail=f"Header indicates file is too large. Maximum upload size is {MAX_UPLOAD_MB}MB.",
         )
 
     job_id = next(tempfile._get_candidate_names())
     job_dir = WORK_ROOT / job_id
     ensure_dir(job_dir)
     archive_path = job_dir / project.filename
-    content = await project.read()
-    archive_path.write_bytes(content)
+    bytes_received = 0
+    chunk_size = 1024 * 1024
+
+    try:
+        with open(archive_path, "wb") as f:
+            while chunk := await project.read(chunk_size):
+                bytes_received += len(chunk)
+                if bytes_received > MAX_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Actual file size exceeds the maximum limit of {MAX_UPLOAD_MB}MB.",
+                    )
+                f.write(chunk)
+    except HTTPException:
+        safe_rmtree(job_dir)
+        raise
+    except Exception as e:
+        safe_rmtree(job_dir)
+        raise HTTPException(status_code=400, detail=f"Error saving upload: {e}")
+
     repo_dir = job_dir / "repo"
     ensure_dir(repo_dir)
 
