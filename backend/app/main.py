@@ -228,6 +228,10 @@ def _scan_repo_dir(repo_dir: Path, progress_cb=None):
 
 
 def finding_key(f: Finding):
+    """Generate a stable identifier for a finding.
+    Uses rule identifier and file path, ignoring line number to handle scanners
+    that may omit location information.
+    """
     metadata = f.metadata or {}
 
     rule_id = (
@@ -238,12 +242,10 @@ def finding_key(f: Finding):
     )
 
     file_path = f.location.path if f.location else None
-    line_number = f.location.start_line if f.location else None
 
     return (
         rule_id,
         file_path,
-        line_number,
     )
 
 
