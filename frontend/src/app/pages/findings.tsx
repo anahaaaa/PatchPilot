@@ -46,7 +46,7 @@ import type { Finding } from "../data/sample-data";
 import { loadLastScan } from "../lib/scan-store";
 import { getJobFindings, updateFindingStatus, labelFinding } from "../lib/api";
 
-type UiFinding = Finding & { false_positive?: boolean };
+type UiFinding = Finding & { false_positive?: boolean | null };
 import { mapBackendFindingToUi } from "../lib/mappers";
 import { cn } from "../components/ui/utils";
 
@@ -163,7 +163,7 @@ export function Findings() {
           
         setFindings(actualFindings.map((bf: any) => ({
           ...mapBackendFindingToUi(bf),
-          false_positive: bf.false_positive === 1 || bf.false_positive === true
+          false_positive: bf.false_positive === 1 || bf.false_positive === true ? true : (bf.false_positive === 0 || bf.false_positive === false ? false : null)
         })));
       })
       .catch((err) => console.error("Failed to fetch findings", err))
@@ -174,10 +174,17 @@ export function Findings() {
   const [detailFinding, setDetailFinding] = useState<UiFinding | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [sortBy, setSortBy] = useState<"severity" | "ml_score">("severity");
+  const [labelingId, setLabelingId] = useState<string | null>(null);
 
   const handleLabelFalsePositive = async (findingId: string, isFalsePositive: boolean, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (labelingId === findingId) return;
     
+    setLabelingId(findingId);
+    
+    const previousFinding = findings.find(f => f.id === findingId);
+    const previousValue = previousFinding?.false_positive;
+
     setFindings((prev) => prev.map((f) => f.id === findingId ? { ...f, false_positive: isFalsePositive } : f));
     if (detailFinding && detailFinding.id === findingId) {
       setDetailFinding((prev) => prev ? { ...prev, false_positive: isFalsePositive } : null);
@@ -187,6 +194,13 @@ export function Findings() {
       await labelFinding(findingId, isFalsePositive);
     } catch (err) {
       console.error("Failed to label finding", err);
+      setFindings((prev) => prev.map((f) => f.id === findingId ? { ...f, false_positive: previousValue } : f));
+      if (detailFinding && detailFinding.id === findingId) {
+        setDetailFinding((prev) => prev ? { ...prev, false_positive: previousValue } : null);
+      }
+      alert("Failed to update finding label. Please try again.");
+    } finally {
+      setLabelingId(null);
     }
   };
 
@@ -467,7 +481,7 @@ export function Findings() {
               <TableHead>Title</TableHead>
               <TableHead>File</TableHead>
               <TableHead>Tool</TableHead>
-              <TableHead className="text-center">Label</TableHead>
+              <TableHead className="text-center" title="Mark as True Positive or False Positive">Label ⓘ</TableHead>
               <TableHead className="text-right">Confidence</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -517,10 +531,10 @@ export function Findings() {
                 </TableCell>
                 <TableCell className="text-center">
                   <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="icon" className={cn("h-7 w-7", finding.false_positive === false && "text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={(e) => handleLabelFalsePositive(finding.id, false, e)} title="True Positive">
+                    <Button variant="ghost" size="icon" disabled={labelingId === finding.id} className={cn("h-7 w-7", finding.false_positive === false && "text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={(e) => handleLabelFalsePositive(finding.id, false, e)} title="True Positive">
                       <ThumbsUp className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className={cn("h-7 w-7", finding.false_positive === true && "text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={(e) => handleLabelFalsePositive(finding.id, true, e)} title="False Positive">
+                    <Button variant="ghost" size="icon" disabled={labelingId === finding.id} className={cn("h-7 w-7", finding.false_positive === true && "text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={(e) => handleLabelFalsePositive(finding.id, true, e)} title="False Positive">
                       <ThumbsDown className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -593,11 +607,11 @@ export function Findings() {
               
               <div className="flex items-center justify-end mt-3 pt-3 border-t border-border/50">
                 <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  <span className="text-xs text-muted-foreground mr-2">Accurate?</span>
-                  <Button variant="ghost" size="icon" className={cn("h-7 w-7", finding.false_positive === false && "text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={(e) => handleLabelFalsePositive(finding.id, false, e)}>
+                  <span className="text-xs text-muted-foreground mr-2" title="Mark as True Positive or False Positive">Accurate? ⓘ</span>
+                  <Button variant="ghost" size="icon" disabled={labelingId === finding.id} aria-label="True Positive" title="True Positive" className={cn("h-7 w-7", finding.false_positive === false && "text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={(e) => handleLabelFalsePositive(finding.id, false, e)}>
                     <ThumbsUp className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" className={cn("h-7 w-7", finding.false_positive === true && "text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={(e) => handleLabelFalsePositive(finding.id, true, e)}>
+                  <Button variant="ghost" size="icon" disabled={labelingId === finding.id} aria-label="False Positive" title="False Positive" className={cn("h-7 w-7", finding.false_positive === true && "text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={(e) => handleLabelFalsePositive(finding.id, true, e)}>
                     <ThumbsDown className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -741,11 +755,11 @@ export function Findings() {
                   <span className="text-xs text-muted-foreground">Help improve the false positive classifier.</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className={cn(detailFinding.false_positive === false && "border-emerald-500 text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={() => handleLabelFalsePositive(detailFinding.id, false)}>
+                  <Button variant="outline" size="sm" disabled={labelingId === detailFinding.id} className={cn(detailFinding.false_positive === false && "border-emerald-500 text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={() => handleLabelFalsePositive(detailFinding.id, false)}>
                     <ThumbsUp className="h-4 w-4 mr-2" />
                     True Positive
                   </Button>
-                  <Button variant="outline" size="sm" className={cn(detailFinding.false_positive === true && "border-rose-500 text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={() => handleLabelFalsePositive(detailFinding.id, true)}>
+                  <Button variant="outline" size="sm" disabled={labelingId === detailFinding.id} className={cn(detailFinding.false_positive === true && "border-rose-500 text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={() => handleLabelFalsePositive(detailFinding.id, true)}>
                     <ThumbsDown className="h-4 w-4 mr-2" />
                     False Positive
                   </Button>
