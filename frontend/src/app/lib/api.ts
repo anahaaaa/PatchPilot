@@ -55,6 +55,7 @@ features?: Record<string, unknown>;
   suggested_fix?: string;
   references?: string[];
   ml_score?: number;
+  false_positive?: boolean | number | null;
 };
 
 export type ScanInitResponse = {
@@ -103,6 +104,16 @@ export async function getJobFindings(jobId: string): Promise<BackendFinding[]> {
   const res = await fetch(`${API_BASE}/jobs/${jobId}/findings`);
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as BackendFinding[];
+}
+
+export async function labelFinding(findingId: string, falsePositive: boolean) {
+  const res = await fetch(`${API_BASE}/findings/${findingId}/label`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ false_positive: falsePositive }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function updateFindingStatus(findingId: string, status: "open" | "accepted" | "ignored") {

@@ -8,6 +8,8 @@ import {
   XCircle,
   Loader2,
   AlertTriangle,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { downloadAuditReport } from "../lib/api";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -42,7 +44,9 @@ import { CodeBlock } from "../components/code-block";
 import { FilterChips } from "../components/filter-chips";
 import type { Finding } from "../data/sample-data";
 import { loadLastScan } from "../lib/scan-store";
-import { getJobFindings, updateFindingStatus } from "../lib/api";
+import { getJobFindings, updateFindingStatus, labelFinding } from "../lib/api";
+
+type UiFinding = Finding & { false_positive?: boolean | null };
 import { mapBackendFindingToUi } from "../lib/mappers";
 import { cn } from "../components/ui/utils";
 
@@ -141,7 +145,7 @@ export function Findings() {
   const navigate = useNavigate();
 
   const [scan, setScan] = useState<any>(null);
-  const [findings, setFindings] = useState<Finding[]>([]);
+  const [findings, setFindings] = useState<UiFinding[]>([]);
   const [isLoadingFindings, setIsLoadingFindings] = useState(true);
 
   useEffect(() => {
@@ -157,16 +161,48 @@ export function Findings() {
           ? response 
           : (response.findings || response.data || []);
           
-        setFindings(actualFindings.map(mapBackendFindingToUi));
+        setFindings(actualFindings.map((bf: any) => ({
+          ...mapBackendFindingToUi(bf),
+          false_positive: bf.false_positive === 1 || bf.false_positive === true ? true : (bf.false_positive === 0 || bf.false_positive === false ? false : null)
+        })));
       })
       .catch((err) => console.error("Failed to fetch findings", err))
       .finally(() => setIsLoadingFindings(false));
   }, []);
 
   const [selectedFindings, setSelectedFindings] = useState<Set<string>>(new Set());
-  const [detailFinding, setDetailFinding] = useState<Finding | null>(null);
+  const [detailFinding, setDetailFinding] = useState<UiFinding | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [sortBy, setSortBy] = useState<"severity" | "ml_score">("severity");
+  const [labelingId, setLabelingId] = useState<string | null>(null);
+
+  const handleLabelFalsePositive = async (findingId: string, isFalsePositive: boolean, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (labelingId === findingId) return;
+    
+    setLabelingId(findingId);
+    
+    const previousFinding = findings.find(f => f.id === findingId);
+    const previousValue = previousFinding?.false_positive;
+
+    setFindings((prev) => prev.map((f) => f.id === findingId ? { ...f, false_positive: isFalsePositive } : f));
+    if (detailFinding && detailFinding.id === findingId) {
+      setDetailFinding((prev) => prev ? { ...prev, false_positive: isFalsePositive } : null);
+    }
+    
+    try {
+      await labelFinding(findingId, isFalsePositive);
+    } catch (err) {
+      console.error("Failed to label finding", err);
+      setFindings((prev) => prev.map((f) => f.id === findingId ? { ...f, false_positive: previousValue } : f));
+      if (detailFinding && detailFinding.id === findingId) {
+        setDetailFinding((prev) => prev ? { ...prev, false_positive: previousValue } : null);
+      }
+      alert("Failed to update finding label. Please try again.");
+    } finally {
+      setLabelingId(null);
+    }
+  };
 
   const handleStatusUpdate = async (findingId: string, newStatus: "open" | "accepted" | "ignored") => {
     setIsUpdatingStatus(true);
@@ -445,6 +481,7 @@ export function Findings() {
               <TableHead>Title</TableHead>
               <TableHead>File</TableHead>
               <TableHead>Tool</TableHead>
+              <TableHead className="text-center" title="Mark as True Positive or False Positive">Label ⓘ</TableHead>
               <TableHead className="text-right">Confidence</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -453,7 +490,7 @@ export function Findings() {
             {filteredFindings.slice(0, 150).map((finding) => (
               <TableRow
                 key={finding.id}
-                className="cursor-pointer hover:bg-muted/50"
+                className={cn("cursor-pointer hover:bg-muted/50", finding.false_positive && "opacity-60 bg-muted/20")}
                 onClick={() => setDetailFinding(finding)}
               >
                 <TableCell onClick={(e) => e.stopPropagation()}>
@@ -471,8 +508,13 @@ export function Findings() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="font-medium max-w-md truncate">
+                  <div className="font-medium max-w-md truncate flex items-center gap-2">
                     {finding.title}
+                    {finding.false_positive && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20 shrink-0">
+                        FP
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {finding.category}
@@ -486,6 +528,16 @@ export function Findings() {
                 </TableCell>
                 <TableCell>
                   <ToolBadge tool={finding.tool} />
+                </TableCell>
+                <TableCell className="text-center">
+                  <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <Button variant="ghost" size="icon" disabled={labelingId === finding.id} className={cn("h-7 w-7", finding.false_positive === false && "text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={(e) => handleLabelFalsePositive(finding.id, false, e)} title="True Positive">
+                      <ThumbsUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" disabled={labelingId === finding.id} className={cn("h-7 w-7", finding.false_positive === true && "text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={(e) => handleLabelFalsePositive(finding.id, true, e)} title="False Positive">
+                      <ThumbsDown className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </TableCell>
                 <TableCell className="text-right">
                   <span className="text-sm font-medium">
@@ -521,7 +573,7 @@ export function Findings() {
         {filteredFindings.slice(0, 150).map((finding) => (
           <Card
             key={finding.id}
-            className="hover:bg-muted/50 transition-colors cursor-pointer"
+            className={cn("hover:bg-muted/50 transition-colors cursor-pointer", finding.false_positive && "opacity-60 bg-muted/20")}
             onClick={() => setDetailFinding(finding)}
           >
             <CardContent className="p-4">
@@ -532,12 +584,17 @@ export function Findings() {
                   onClick={(e) => e.stopPropagation()}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center flex-wrap gap-2 mb-2">
                     <SeverityChip severity={finding.severity} />
                     {finding.ml_score !== undefined && finding.ml_score !== null && (
                       <MlScorePill score={finding.ml_score} />
                     )}
                     <ToolBadge tool={finding.tool} />
+                    {finding.false_positive && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                        FP
+                      </span>
+                    )}
                   </div>
                   <div className="font-medium mb-1 line-clamp-2">
                     {finding.title}
@@ -545,6 +602,18 @@ export function Findings() {
                   <div className="text-xs text-muted-foreground font-mono truncate">
                     {finding.file}:{finding.lineNumber}
                   </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-end mt-3 pt-3 border-t border-border/50">
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-xs text-muted-foreground mr-2" title="Mark as True Positive or False Positive">Accurate? ⓘ</span>
+                  <Button variant="ghost" size="icon" disabled={labelingId === finding.id} aria-label="True Positive" title="True Positive" className={cn("h-7 w-7", finding.false_positive === false && "text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={(e) => handleLabelFalsePositive(finding.id, false, e)}>
+                    <ThumbsUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" disabled={labelingId === finding.id} aria-label="False Positive" title="False Positive" className={cn("h-7 w-7", finding.false_positive === true && "text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={(e) => handleLabelFalsePositive(finding.id, true, e)}>
+                    <ThumbsDown className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </div>
             </CardContent>
@@ -557,7 +626,14 @@ export function Findings() {
           {detailFinding && (
             <>
               <SheetHeader className="pb-4 border-b border-border/50">
-                <SheetTitle className="text-xl font-semibold tracking-tight">{detailFinding.title}</SheetTitle>
+                <SheetTitle className="text-xl font-semibold tracking-tight flex items-center flex-wrap gap-3">
+                  {detailFinding.title}
+                  {detailFinding.false_positive && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                      Marked as False Positive
+                    </span>
+                  )}
+                </SheetTitle>
                 <SheetDescription className="text-sm text-muted-foreground mt-1">
                   Finding ID: <span className="font-mono">{detailFinding.id}</span>
                 </SheetDescription>
@@ -672,8 +748,26 @@ export function Findings() {
                 </Tabs>
               </div>
 
+            {/* ML Labeling Section */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 mt-6 border-t border-border/50 shrink-0">
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold">Label for ML Training</span>
+                  <span className="text-xs text-muted-foreground">Help improve the false positive classifier.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" disabled={labelingId === detailFinding.id} className={cn(detailFinding.false_positive === false && "border-emerald-500 text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-500")} onClick={() => handleLabelFalsePositive(detailFinding.id, false)}>
+                    <ThumbsUp className="h-4 w-4 mr-2" />
+                    True Positive
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={labelingId === detailFinding.id} className={cn(detailFinding.false_positive === true && "border-rose-500 text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-500")} onClick={() => handleLabelFalsePositive(detailFinding.id, true)}>
+                    <ThumbsDown className="h-4 w-4 mr-2" />
+                    False Positive
+                  </Button>
+                </div>
+              </div>
+
             {/* Status Buttons - Dynamic and clickable */}
-              <div className="flex gap-3 pt-6 mt-6 border-t border-border/50 shrink-0">
+              <div className="flex gap-3 pt-4 shrink-0">
                 {detailFinding.status === 'accepted' ? (
                    <Button 
                     variant="outline" 
