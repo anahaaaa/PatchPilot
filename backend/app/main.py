@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -62,7 +63,6 @@ from .scanners.entropy import run_entropy
 from .scanners.gitleaks import run_gitleaks
 from .scanners.osv import run_osv_scanner
 from .scanners.semgrep import run_semgrep
-from .utils.exec import run_cmd
 from .utils.fs import ensure_dir, safe_rmtree, unzip_to_dir
 
 _MAX_UPLOAD_MB_RAW = os.environ.get("MAX_UPLOAD_MB")
@@ -192,49 +192,26 @@ def _scan_repo_dir(repo_dir: Path, progress_cb=None, job_dir: Path = None):
     if progress_cb:
         progress_cb("sast", "in_progress")
 
-    semgrep = run_semgrep(repo_dir)
-    if job_dir:
-        semgrep_raw = run_cmd(
-            ["semgrep", "--config", "p/ci", "--json", "--quiet"],
-            cwd=repo_dir,
-            timeout_s=600,
-        )
-        (job_dir / "raw").mkdir(parents=True, exist_ok=True)
-        (job_dir / "raw" / "semgrep.json").write_text(
-            semgrep_raw.get("stdout", ""), encoding="utf-8"
-        )
+    semgrep_raw_out = (job_dir / "raw" / "semgrep.json") if job_dir else None
+    semgrep = run_semgrep(repo_dir, raw_out=semgrep_raw_out)
 
     if progress_cb:
         progress_cb("sast", "completed")
 
     if progress_cb:
         progress_cb("dependency", "in_progress")
-    osv = run_osv_scanner(repo_dir)
-    if job_dir:
-        osv_raw = run_cmd(
-            ["osv-scanner", "--json", "--recursive", "."], cwd=repo_dir, timeout_s=600
-        )
-        (job_dir / "raw").mkdir(parents=True, exist_ok=True)
-        (job_dir / "raw" / "osv.json").write_text(
-            osv_raw.get("stdout", ""), encoding="utf-8"
-        )
+
+    osv_raw_out = (job_dir / "raw" / "osv.json") if job_dir else None
+    osv = run_osv_scanner(repo_dir, raw_out=osv_raw_out)
+
     if progress_cb:
         progress_cb("dependency", "completed")
 
     if progress_cb:
         progress_cb("secrets", "in_progress")
 
-    gitleaks = run_gitleaks(repo_dir)
-    if job_dir:
-        gitleaks_raw = run_cmd(
-            ["gitleaks", "detect", "--no-git", "--redact", "--report-format", "json"],
-            cwd=repo_dir,
-            timeout_s=600,
-        )
-        (job_dir / "raw").mkdir(parents=True, exist_ok=True)
-        (job_dir / "raw" / "gitleaks.json").write_text(
-            gitleaks_raw.get("stdout", ""), encoding="utf-8"
-        )
+    gitleaks_raw_out = (job_dir / "raw" / "gitleaks.json") if job_dir else None
+    gitleaks = run_gitleaks(repo_dir, raw_out=gitleaks_raw_out)
 
     if progress_cb:
         progress_cb("secrets", "completed")
@@ -262,8 +239,8 @@ def _scan_repo_dir(repo_dir: Path, progress_cb=None, job_dir: Path = None):
 
 def finding_key(f: Finding):
     """Generate a stable identifier for a finding.
-    Uses rule identifier and file path, ignoring line number to handle scanners
-    that may omit location information.
+    Uses rule identifier, file path, and start line so that findings from the
+    same rule on different lines are treated as distinct findings.
     """
     metadata = f.metadata or {}
 
@@ -275,10 +252,12 @@ def finding_key(f: Finding):
     )
 
     file_path = f.location.path if f.location else None
+    line_number = f.location.start_line if f.location else None
 
     return (
         rule_id,
         file_path,
+        line_number,
     )
 
 
@@ -432,8 +411,9 @@ async def _run_single_scan_task(
         finally:
             await db.close()
 
+        job_dir = WORK_ROOT / job_id
         semgrep, osv, gitleaks, entropy, findings = await run_in_threadpool(
-            _scan_repo_dir, scan_root, update_progress
+            functools.partial(_scan_repo_dir, scan_root, update_progress, job_dir=job_dir)
         )
 
         raw_finding_count = len(findings)
@@ -726,7 +706,8 @@ def evidence_pack(job_id: str = Form(...), project_name: str = Form("project")):
     ensure_dir(out_dir)
 
     pack_path = build_evidence_pack(
-        repo_dir=repo_dir, out_dir=out_dir, project_name=project_name, job_id=job_id
+        repo_dir=repo_dir, out_dir=out_dir, project_name=project_name, job_id=job_id,
+        job_dir=job_dir,
     )
     return FileResponse(
         path=str(pack_path), filename=pack_path.name, media_type="application/zip"
@@ -1075,7 +1056,7 @@ async def _run_repo_scan_task(
             unzip_to_dir(archive_path, repo_dir)
 
             scan_root = _maybe_use_single_top_folder(repo_dir)
-            semgrep, osv, gitleaks, entropy, findings = _scan_repo_dir(scan_root)
+            semgrep, osv, gitleaks, entropy, findings = _scan_repo_dir(scan_root, job_dir=job_dir)
 
             raw_finding_count = len(findings)
 
