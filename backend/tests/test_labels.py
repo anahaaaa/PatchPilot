@@ -36,7 +36,7 @@ def test_label_finding_not_found():
     mock_cursor.fetchone.return_value = None
     mock_db.execute.return_value = mock_cursor
 
-    with patch("app.main.get_db", return_value=mock_db):
+    with patch("app.main.get_db", AsyncMock(return_value=mock_db)):
         response = client.post(
             "/findings/missing-finding-404/label", json={"false_positive": False}
         )
