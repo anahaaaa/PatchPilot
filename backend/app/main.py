@@ -698,21 +698,23 @@ async def _record_fixes_to_db(job_id: str, fixes: List[Fix]):
                 else:
                     fix_type = "mixed"
 
-                rows.append((
-                    str(uuid.uuid4()),
-                    job_id,
-                    f.finding_id,
-                    diff_line_count,
-                    diff_file_count,
-                    fix_type
-                ))
+                rows.append(
+                    (
+                        str(uuid.uuid4()),
+                        job_id,
+                        f.finding_id,
+                        diff_line_count,
+                        diff_file_count,
+                        fix_type,
+                    )
+                )
             if rows:
                 await db.executemany(
                     "INSERT INTO fixes "
                     "(id, job_id, finding_id, diff_line_count, "
                     "diff_file_count, fix_type) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    rows
+                    rows,
                 )
                 await db.commit()
         finally:
