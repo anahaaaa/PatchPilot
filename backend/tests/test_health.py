@@ -72,3 +72,19 @@ def test_ollama_health_bad_status(mock_async_client):
     assert data["available"] is False
     assert data["base_url"] == "http://localhost:11434"
     assert data["models"] == []
+
+
+@patch("app.main.httpx.AsyncClient")
+def test_ollama_health_timeout(mock_async_client):
+    """Test that the endpoint safely returns False when Ollama times out."""
+    mock_async_client.return_value = create_mock_client(
+        side_effect=httpx.TimeoutException("Connection timed out")
+    )
+
+    response = client.get("/api/health/ollama")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["available"] is False
+    assert data["base_url"] == "http://localhost:11434"
+    assert data["models"] == []
