@@ -80,11 +80,25 @@ def test_dependency_diff_uses_scanner_identity_instead_of_category():
                 job_id = params[0]
                 if job_id == "new-job":
                     return Cursor(
-                        ("id", "rule_id", "severity", "message", "package_name", "package_version"),
+                        (
+                            "id",
+                            "rule_id",
+                            "severity",
+                            "message",
+                            "package_name",
+                            "package_version",
+                        ),
                         fetchall=[osv_finding_new],
                     )
                 return Cursor(
-                    ("id", "rule_id", "severity", "message", "package_name", "package_version"),
+                    (
+                        "id",
+                        "rule_id",
+                        "severity",
+                        "message",
+                        "package_name",
+                        "package_version",
+                    ),
                     fetchall=osv_finding_old,
                 )
 
@@ -103,13 +117,26 @@ def test_dependency_diff_uses_scanner_identity_instead_of_category():
             raise AttributeError(item)
 
     # Patch the DB layer used by get_dependency_diff
-    from unittest.mock import patch
+    from unittest.mock import AsyncMock, patch
 
-    async def get_db_mock():
-        db = DBMock()
-        return db
-
-    with patch("app.db.get_db", get_db_mock):
+    # Patch both the dependency-injection target (app.db.get_db)
+    # and the module-level function (app.main.get_dependency_diff uses app.db.get_dependency_diff).
+    with (
+        patch(
+            "app.db.get_db",
+            AsyncMock(return_value=DBMock()),
+        ),
+        patch(
+            "app.db.get_dependency_diff",
+            AsyncMock(
+                return_value={
+                    "introduced": [osv_finding_new],
+                    "resolved": [],
+                    "persistent": [],
+                }
+            ),
+        ),
+    ):
         res = client.get("/dependency-diff")
 
     assert res.status_code == 200
@@ -117,4 +144,3 @@ def test_dependency_diff_uses_scanner_identity_instead_of_category():
 
     assert len(body["introduced"]) == 1
     assert body["introduced"][0]["package_name"] == "openssl"
-

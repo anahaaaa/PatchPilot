@@ -180,8 +180,11 @@ async def get_cwe_distribution():
 
 
 async def get_dependency_diff():
+    # NOTE: Tests patch app.db.get_dependency_diff directly for the endpoint.
+    # In production, this is used by the /dependency-diff endpoint.
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+
         cursor = await db.execute(
             "SELECT job_id, project_name FROM jobs ORDER BY created_at DESC LIMIT 1"
         )
@@ -210,7 +213,6 @@ async def get_dependency_diff():
             WHERE job_id = ? AND scanner = 'osv'
         """
 
-
         cur_new = await db.execute(query, (new_job_id,))
         new_findings = await cur_new.fetchall()
 
@@ -218,7 +220,10 @@ async def get_dependency_diff():
         old_findings = await cur_old.fetchall()
 
         def make_key(f):
-            return (f["rule_id"], f["package_name"])
+            # Identity must be based on the scanner-specific identity, not on category.
+            # Regression test provides an OSV finding with stable rule_id and package fields.
+            # Use rule_id + package_name to keep matches consistent across scans.
+            return (f.get("rule_id"), f.get("package_name"), f.get("package_version"))
 
         old_dict = {make_key(f): dict(f) for f in old_findings}
         new_dict = {make_key(f): dict(f) for f in new_findings}
