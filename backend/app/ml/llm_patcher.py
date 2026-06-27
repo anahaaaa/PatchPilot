@@ -28,13 +28,22 @@ def _get_language(file_path: str) -> str:
 
 
 def build_patch_prompt(finding: dict, code_context: str) -> str:
-    description = finding.get("description") or "No description provided."
+    description = (
+        finding.get("description")
+        or finding.get("message")
+        or "No description provided."
+    )
 
     metadata = finding.get("metadata") or {}
-    cwe = metadata.get("cwe") or "Unknown CWE"
+    cwe = (
+        finding.get("cwe")
+        or metadata.get("cwe_category")
+        or metadata.get("cwe")
+        or "Unknown CWE"
+    )
 
     location = finding.get("location") or {}
-    file_path = location.get("path") or "unknown_file"
+    file_path = finding.get("file_path") or location.get("path") or "unknown_file"
 
     language = _get_language(file_path)
 

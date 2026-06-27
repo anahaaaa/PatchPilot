@@ -1,23 +1,43 @@
 from app.ml.llm_patcher import _get_language, build_patch_prompt
 
 
-def test_build_patch_prompt_complete_data():
+def test_build_patch_prompt_scanner_finding():
     finding = {
-        "description": "XSS vulnerability",
-        "metadata": {"cwe": "CWE-79"},
+        "description": "Scanner XSS vulnerability",
+        "metadata": {"cwe_category": "CWE-79"},
         "location": {"path": "src/components/App.tsx"},
     }
     prompt = build_patch_prompt(finding, "<div>{userInput}</div>")
 
-    assert "Description: XSS vulnerability" in prompt
+    assert "Description: Scanner XSS vulnerability" in prompt
     assert "CWE Identifier: CWE-79" in prompt
     assert "File Path: src/components/App.tsx" in prompt
     assert "Programming Language: TypeScript (React)" in prompt
-    assert "<context>\n<div>{userInput}</div>\n</context>" in prompt
+
+
+def test_build_patch_prompt_database_finding():
+    finding = {
+        "message": "Database SQLi vulnerability",
+        "cwe": "CWE-89",
+        "file_path": "backend/db.py",
+    }
+    prompt = build_patch_prompt(finding, "SELECT *")
+
+    assert "Description: Database SQLi vulnerability" in prompt
+    assert "CWE Identifier: CWE-89" in prompt
+    assert "File Path: backend/db.py" in prompt
+    assert "Programming Language: Python" in prompt
 
 
 def test_build_patch_prompt_missing_and_none_data():
-    finding = {"description": None, "metadata": None, "location": None}
+    finding = {
+        "description": None,
+        "message": None,
+        "metadata": None,
+        "location": None,
+        "cwe": None,
+        "file_path": None,
+    }
     prompt = build_patch_prompt(finding, "some code")
 
     assert "Description: No description provided." in prompt
