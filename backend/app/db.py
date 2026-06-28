@@ -37,6 +37,7 @@ async def init_db():
                 false_positive  INTEGER DEFAULT NULL,
                 labeled_at      TEXT DEFAULT NULL,
                 version         INTEGER DEFAULT 1,
+                status          TEXT DEFAULT 'open',
                 created_at      TEXT DEFAULT (datetime('now'))
             )
         """)
@@ -113,6 +114,11 @@ async def init_db():
         if "version" not in columns:
             await db.execute(
                 "ALTER TABLE findings ADD COLUMN version INTEGER DEFAULT 1"
+            )
+
+        if "status" not in columns:
+            await db.execute(
+                "ALTER TABLE findings ADD COLUMN status TEXT DEFAULT 'open'"
             )
 
         cursor = await db.execute("PRAGMA table_info(jobs)")

@@ -1078,24 +1078,12 @@ async def update_finding_status(finding_id: str, payload: FindingStatusUpdate):
             raise HTTPException(
                 status_code=404, detail=f"Finding '{finding_id}' not found."
             )
-        try:
-            await db.execute(
-                "UPDATE findings SET status = ? WHERE id = ?",
-                (payload.status, finding_id),
-            )
-            await db.commit()
-        except Exception as e:
-            if "no such column: status" in str(e).lower():
-                await db.execute(
-                    "ALTER TABLE findings ADD COLUMN status TEXT DEFAULT 'open'"
-                )
-                await db.execute(
-                    "UPDATE findings SET status = ? WHERE id = ?",
-                    (payload.status, finding_id),
-                )
-                await db.commit()
-            else:
-                raise e
+
+        await db.execute(
+            "UPDATE findings SET status = ? WHERE id = ?",
+            (payload.status, finding_id),
+        )
+        await db.commit()
     finally:
         await db.close()
 
