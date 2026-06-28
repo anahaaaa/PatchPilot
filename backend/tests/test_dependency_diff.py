@@ -127,7 +127,7 @@ def test_dependency_diff_uses_scanner_identity_instead_of_category():
             AsyncMock(return_value=DBMock()),
         ),
         patch(
-            "app.db.get_dependency_diff",
+            "app.main.get_dependency_diff",
             AsyncMock(
                 return_value={
                     "introduced": [osv_finding_new],

@@ -366,23 +366,23 @@ async def download_to_path(url: str, dest_path: Path, max_retries: int = 5) -> N
                         bytes_received = 0
                         chunk_size = 1024 * 1024
 
-                        with open(dest_path, "wb") as f:
-                            async for chunk in r.aiter_bytes(chunk_size=chunk_size):
-                                bytes_received += len(chunk)
-                                if bytes_received > MAX_UPLOAD_SIZE:
-                                    # Best-effort cleanup so tests can assert non-existence.
-                                    try:
-                                        if dest_path.exists():
-                                            dest_path.unlink()
-                                    except Exception:
-                                        pass
-
-                                    raise HTTPException(
-                                        status_code=413,
-                                        detail=f"Remote repository exceeds the maximum limit of {MAX_UPLOAD_MB}MB.",
-                                    )
-
-                                f.write(chunk)
+                        try:
+                            with open(dest_path, "wb") as f:
+                                async for chunk in r.aiter_bytes(chunk_size=chunk_size):
+                                    bytes_received += len(chunk)
+                                    if bytes_received > MAX_UPLOAD_SIZE:
+                                        raise HTTPException(
+                                            status_code=413,
+                                            detail=f"Remote repository exceeds the maximum limit of {MAX_UPLOAD_MB}MB.",
+                                        )
+                                    f.write(chunk)
+                        except Exception:
+                            try:
+                                if dest_path.exists():
+                                    dest_path.unlink()
+                            except Exception:
+                                pass
+                            raise
                         return
 
                 if status_code_for_retry in (403, 429):
