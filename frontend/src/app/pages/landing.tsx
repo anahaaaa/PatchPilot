@@ -24,7 +24,7 @@ export function Landing() {
         <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
           <Link to="/dashboard">
             <Button size="lg" className="h-11 px-6">
-              Start a scan &gt; <ArrowRight className="h-4 w-4" />
+              Start a scan &gt;
             </Button>
           </Link>
         </div>
@@ -42,8 +42,8 @@ export function Landing() {
             <Wrench className="mb-4 h-5 w-5 text-primary" />
             <h2 className="text-base font-semibold">Patch</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Review prioritized findings and prepare targeted remediation
-              steps for high-impact issues.
+              Review prioritized findings and prepare targeted remediation steps
+              for high-impact issues.
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card p-5">
