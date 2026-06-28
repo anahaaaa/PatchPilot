@@ -34,21 +34,21 @@ from app.ml.deduplicator import SENTENCE_TRANSFORMERS_AVAILABLE, deduplicate
 from app.ml.ranker import load_ranker, scoring_function
 
 from .db import (
+    create_findings,
+    create_job,
+    delete_job,
     get_cwe_distribution,
     get_db,
     get_dependency_diff,
+    get_finding,
+    get_findings_by_job_id,
+    get_job,
     get_leaderboard_stats,
     get_trend_data,
     init_db,
-    upsert_contributor_stat,
-    create_job,
-    get_job,
-    update_job_status,
-    delete_job,
-    create_findings,
-    get_findings_by_job_id,
     update_finding_status,
-    get_finding,
+    update_job_status,
+    upsert_contributor_stat,
 )
 from .models import (
     Finding,
@@ -711,9 +711,7 @@ async def download_audit_pdf(job_id: str):
     for row in rows:
         loc = None
         if row["file_path"]:
-            loc = Location(
-                path=row["file_path"], start_line=row["line_number"]
-            )
+            loc = Location(path=row["file_path"], start_line=row["line_number"])
 
         findings_list.append(
             Finding(
@@ -778,7 +776,7 @@ async def get_findings(job_id: str):
 
 
 @app.patch("/findings/{finding_id}/status")
-async def update_finding_status(finding_id: str, payload: FindingStatusUpdate):
+async def update_finding_status_endpoint(finding_id: str, payload: FindingStatusUpdate):
     if payload.status not in ("open", "accepted", "ignored"):
         raise HTTPException(
             status_code=400,
@@ -797,6 +795,8 @@ async def update_finding_status(finding_id: str, payload: FindingStatusUpdate):
         await db.close()
 
     return {"id": finding_id, "status": payload.status}
+
+
 @app.get("/jobs/{job_id}/verify")
 async def get_verify(job_id: str):
     db = await get_db()

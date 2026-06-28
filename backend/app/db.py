@@ -1,6 +1,6 @@
 import datetime
 import os
-from typing import List, Optional, Tuple, Any
+from typing import Any, List, Optional, Tuple
 
 import aiosqlite
 
@@ -97,7 +97,9 @@ async def init_db():
             await db.execute("ALTER TABLE findings ADD COLUMN features TEXT")
 
         if "status" not in columns:
-            await db.execute("ALTER TABLE findings ADD COLUMN status TEXT DEFAULT 'open'")
+            await db.execute(
+                "ALTER TABLE findings ADD COLUMN status TEXT DEFAULT 'open'"
+            )
 
         cursor = await db.execute("PRAGMA table_info(jobs)")
         job_columns = [row["name"] for row in await cursor.fetchall()]
@@ -149,7 +151,7 @@ async def get_job(db: aiosqlite.Connection, job_id: str) -> Optional[dict]:
     if isinstance(row, dict):
         return row
     columns = [col[0] for col in cursor.description] if cursor.description else []
-    return dict(zip(columns[:len(row)], row))
+    return dict(zip(columns[: len(row)], row))
 
 
 async def update_job_status(
@@ -198,7 +200,9 @@ async def delete_job(db: aiosqlite.Connection, job_id: str):
     await db.commit()
 
 
-async def create_findings(db: aiosqlite.Connection, findings_rows: List[Tuple[Any, ...]]):
+async def create_findings(
+    db: aiosqlite.Connection, findings_rows: List[Tuple[Any, ...]]
+):
     await db.executemany(
         """
         INSERT INTO findings (
@@ -233,7 +237,7 @@ async def get_findings_by_job_id(db: aiosqlite.Connection, job_id: str) -> List[
         elif isinstance(row, dict):
             result.append(row)
         else:
-            result.append(dict(zip(columns[:len(row)], row)))
+            result.append(dict(zip(columns[: len(row)], row)))
     return result
 
 
@@ -265,9 +269,7 @@ async def get_finding(db: aiosqlite.Connection, finding_id: str) -> Optional[dic
     if isinstance(row, dict):
         return row
     columns = [col[0] for col in cursor.description] if cursor.description else []
-    return dict(zip(columns[:len(row)], row))
-
-
+    return dict(zip(columns[: len(row)], row))
 
 
 async def get_trend_data(limit: int = 6):
