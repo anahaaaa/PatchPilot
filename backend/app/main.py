@@ -41,6 +41,14 @@ from .db import (
     get_trend_data,
     init_db,
     upsert_contributor_stat,
+    create_job,
+    get_job,
+    update_job_status,
+    delete_job,
+    create_findings,
+    get_findings_by_job_id,
+    update_finding_status,
+    get_finding,
 )
 from .models import (
     Finding,
@@ -315,16 +323,21 @@ async def download_to_path(url: str, dest_path: Path, max_retries: int = 5) -> N
                         bytes_received = 0
                         chunk_size = 1024 * 1024
 
+                        exceeded = False
                         with open(dest_path, "wb") as f:
                             async for chunk in r.aiter_bytes(chunk_size=chunk_size):
                                 bytes_received += len(chunk)
                                 if bytes_received > MAX_UPLOAD_SIZE:
-                                    dest_path.unlink(missing_ok=True)
-                                    raise HTTPException(
-                                        status_code=413,
-                                        detail=f"Remote repository exceeds the maximum limit of {MAX_UPLOAD_MB}MB.",
-                                    )
+                                    exceeded = True
+                                    break
                                 f.write(chunk)
+
+                        if exceeded:
+                            dest_path.unlink(missing_ok=True)
+                            raise HTTPException(
+                                status_code=413,
+                                detail=f"Remote repository exceeds the maximum limit of {MAX_UPLOAD_MB}MB.",
+                            )
                         return
 
                 if status_code_for_retry in (403, 429):
@@ -389,11 +402,7 @@ async def _run_single_scan_task(
     try:
         db = await get_db()
         try:
-            await db.execute(
-                "INSERT INTO jobs (job_id, project_name, scan_method) VALUES (?, ?, ?)",
-                (job_id, project_name, scan_method),
-            )
-            await db.commit()
+            await create_job(db, job_id, project_name, scan_method)
         finally:
             await db.close()
 
@@ -437,6 +446,7 @@ async def _run_single_scan_task(
                         str(uuid.uuid4()),
                         job_id,
                         rule_id,
+                        f.title,
                         f.severity,
                         f.category,
                         file_path,
@@ -447,18 +457,14 @@ async def _run_single_scan_task(
                         pkg_name,
                         pkg_version,
                         f.ml_score,
+                        json.dumps(f.features) if f.features else None,
                     )
                 )
             if rows:
-                await db.executemany(
-                    "INSERT INTO findings (id, job_id, rule_id, severity, category, file_path, line_number, cwe, scanner, message, package_name, package_version, ml_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    rows,
-                )
-            await db.execute(
-                "UPDATE jobs SET status = 'completed', raw_finding_count = ?, finding_count = ? WHERE job_id = ?",
-                (raw_finding_count, finding_count, job_id),
+                await create_findings(db, rows)
+            await update_job_status(
+                db, job_id, "completed", raw_finding_count, finding_count
             )
-            await db.commit()
         finally:
             await db.close()
 
@@ -472,10 +478,7 @@ async def _run_single_scan_task(
         try:
             db = await get_db()
             try:
-                await db.execute(
-                    "UPDATE jobs SET status = 'failed' WHERE job_id = ?", (job_id,)
-                )
-                await db.commit()
+                await update_job_status(db, job_id, "failed")
             finally:
                 await db.close()
         except Exception:
@@ -605,21 +608,12 @@ def fix(req: FixRequest):
 async def get_baseline_findings(job_id: str):
     db = await get_db()
     try:
-        cursor = await db.execute(
-            """
-            SELECT rule_id, file_path, line_number
-            FROM findings
-            WHERE job_id = ?
-            """,
-            (job_id,),
-        )
-        rows = await cursor.fetchall()
-
+        rows = await get_findings_by_job_id(db, job_id)
         return {
             (
-                row[0],
-                row[1],
-                row[2],
+                row["rule_id"],
+                row["file_path"],
+                row["line_number"],
             )
             for row in rows
         }
@@ -702,49 +696,33 @@ def evidence_pack(job_id: str = Form(...), project_name: str = Form("project")):
 async def download_audit_pdf(job_id: str):
     db = await get_db()
     try:
-        cur = await db.execute(
-            "SELECT project_name FROM jobs WHERE job_id = ?", (job_id,)
-        )
-        job_row = await cur.fetchone()
-
+        job_row = await get_job(db, job_id)
         if job_row is None:
             raise HTTPException(
                 status_code=404, detail=f"No job found with id '{job_id}'"
             )
 
-        project_name = job_row[0]
-
-        cur = await db.execute(
-            """
-            SELECT id, rule_id, severity, category, file_path, line_number, message
-            FROM findings
-            WHERE job_id = ?
-            """,
-            (job_id,),
-        )
-        columns = [col[0] for col in cur.description]
-        rows = await cur.fetchall()
+        project_name = job_row["project_name"]
+        rows = await get_findings_by_job_id(db, job_id)
     finally:
         await db.close()
 
     findings_list = []
     for row in rows:
-        row_dict = dict(zip(columns, row))
-
         loc = None
-        if row_dict["file_path"]:
+        if row["file_path"]:
             loc = Location(
-                path=row_dict["file_path"], start_line=row_dict["line_number"]
+                path=row["file_path"], start_line=row["line_number"]
             )
 
         findings_list.append(
             Finding(
-                id=row_dict["id"],
-                title=row_dict["rule_id"] or "Unknown",
-                severity=row_dict["severity"] or "INFO",
-                category=row_dict["category"] or "Unknown",
+                id=row["id"],
+                title=row.get("title") or row.get("rule_id") or "Unknown",
+                severity=row.get("severity") or "INFO",
+                category=row.get("category") or "Unknown",
                 location=loc,
-                description=row_dict["message"] or "",
+                description=row.get("message") or "",
             )
         )
 
@@ -771,51 +749,20 @@ async def download_audit_pdf(job_id: str):
 async def get_findings(job_id: str):
     db = await get_db()
     try:
-        cur = await db.execute(
-            "SELECT job_id, raw_finding_count, finding_count FROM jobs WHERE job_id = ?",
-            (job_id,),
-        )
-        job_row = await cur.fetchone()
-
+        job_row = await get_job(db, job_id)
         if job_row is None:
             raise HTTPException(
                 status_code=404, detail=f"No job found with id '{job_id}'"
             )
 
-        raw_finding_count = None
-        finding_count = None
-        if job_row is not None:
-            if hasattr(job_row, "keys") or isinstance(job_row, dict):
-                try:
-                    raw_finding_count = job_row["raw_finding_count"]
-                except (KeyError, IndexError):
-                    pass
-                try:
-                    finding_count = job_row["finding_count"]
-                except (KeyError, IndexError):
-                    pass
-            else:
-                if len(job_row) > 1:
-                    raw_finding_count = job_row[1]
-                if len(job_row) > 2:
-                    finding_count = job_row[2]
+        raw_finding_count = job_row.get("raw_finding_count")
+        finding_count = job_row.get("finding_count")
 
-        cur = await db.execute(
-            """
-            SELECT id, rule_id, severity, category, file_path,
-                   line_number, cwe, scanner, message, package_name, package_version, created_at, ml_score
-            FROM findings
-            WHERE job_id = ?
-            ORDER BY created_at
-            """,
-            (job_id,),
-        )
-        columns = [col[0] for col in cur.description]
-        rows = await cur.fetchall()
+        rows = await get_findings_by_job_id(db, job_id)
     finally:
         await db.close()
 
-    findings = [dict(zip(columns, row)) for row in rows]
+    findings = [dict(row) for row in rows]
 
     if raw_finding_count is None:
         raw_finding_count = len(findings)
@@ -840,42 +787,21 @@ async def update_finding_status(finding_id: str, payload: FindingStatusUpdate):
 
     db = await get_db()
     try:
-        cur = await db.execute("SELECT id FROM findings WHERE id = ?", (finding_id,))
-        if not await cur.fetchone():
+        finding = await get_finding(db, finding_id)
+        if not finding:
             raise HTTPException(
                 status_code=404, detail=f"Finding '{finding_id}' not found."
             )
-        try:
-            await db.execute(
-                "UPDATE findings SET status = ? WHERE id = ?",
-                (payload.status, finding_id),
-            )
-            await db.commit()
-        except Exception as e:
-            if "no such column: status" in str(e).lower():
-                await db.execute(
-                    "ALTER TABLE findings ADD COLUMN status TEXT DEFAULT 'open'"
-                )
-                await db.execute(
-                    "UPDATE findings SET status = ? WHERE id = ?",
-                    (payload.status, finding_id),
-                )
-                await db.commit()
-            else:
-                raise e
+        await update_finding_status(db, finding_id, payload.status)
     finally:
         await db.close()
 
     return {"id": finding_id, "status": payload.status}
-
-
 @app.get("/jobs/{job_id}/verify")
 async def get_verify(job_id: str):
     db = await get_db()
     try:
-        cur = await db.execute("SELECT job_id FROM jobs WHERE job_id = ?", (job_id,))
-        job_row = await cur.fetchone()
-
+        job_row = await get_job(db, job_id)
         if job_row is None:
             raise HTTPException(
                 status_code=404, detail=f"No job found with id '{job_id}'"
@@ -905,10 +831,15 @@ async def get_verify(job_id: str):
 
 
 @app.delete("/jobs/{job_id}")
-def delete_job(job_id: str):
+async def delete_job_endpoint(job_id: str):
     job_dir = WORK_ROOT / job_id
     if job_dir.exists():
         safe_rmtree(job_dir)
+    db = await get_db()
+    try:
+        await delete_job(db, job_id)
+    finally:
+        await db.close()
     return {"deleted": True}
 
 
@@ -1016,16 +947,10 @@ async def _run_repo_scan_task(
                 org_row = await cur.fetchone()
 
                 if org_row and org_row["status"] == "aborted":
-                    await db.execute(
-                        "UPDATE jobs SET status = 'aborted' WHERE job_id = ?", (job_id,)
-                    )
-                    await db.commit()
+                    await update_job_status(db, job_id, "aborted")
                     return
 
-                await db.execute(
-                    "UPDATE jobs SET status = 'scanning' WHERE job_id = ?", (job_id,)
-                )
-                await db.commit()
+                await update_job_status(db, job_id, "scanning")
             finally:
                 await db.close()
 
@@ -1081,6 +1006,7 @@ async def _run_repo_scan_task(
                             str(uuid.uuid4()),
                             job_id,
                             rule_id,
+                            f.title,
                             f.severity,
                             f.category,
                             file_path,
@@ -1091,14 +1017,12 @@ async def _run_repo_scan_task(
                             pkg_name,
                             pkg_version,
                             f.ml_score,
+                            json.dumps(f.features) if f.features else None,
                         )
                     )
 
                 if rows:
-                    await db.executemany(
-                        "INSERT INTO findings (id, job_id, rule_id, severity, category, file_path, line_number, cwe, scanner, message, package_name, package_version, ml_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        rows,
-                    )
+                    await create_findings(db, rows)
 
                 dep_rows = []
                 for pkg_n, pkg_v in deps:
@@ -1112,21 +1036,16 @@ async def _run_repo_scan_task(
                         dep_rows,
                     )
 
-                await db.execute(
-                    "UPDATE jobs SET status = 'completed', raw_finding_count = ?, finding_count = ? WHERE job_id = ?",
-                    (raw_finding_count, finding_count, job_id),
+                await update_job_status(
+                    db, job_id, "completed", raw_finding_count, finding_count
                 )
-                await db.commit()
             finally:
                 await db.close()
         except Exception:
             logger.exception("Failed repo scan task for job %s", job_id)
             db = await get_db()
             try:
-                await db.execute(
-                    "UPDATE jobs SET status = 'failed' WHERE job_id = ?", (job_id,)
-                )
-                await db.commit()
+                await update_job_status(db, job_id, "failed")
             finally:
                 await db.close()
 
@@ -1152,11 +1071,9 @@ async def _run_org_batch(org_job_id: str, repos: List[dict]):
 
         db = await get_db()
         try:
-            await db.execute(
-                "INSERT INTO jobs (job_id, project_name, scan_method, org_job_id, status) VALUES (?, ?, ?, ?, ?)",
-                (job_id, project_name, "org_batch", org_job_id, "pending"),
+            await create_job(
+                db, job_id, project_name, "org_batch", org_job_id, "pending"
             )
-            await db.commit()
         finally:
             await db.close()
 
