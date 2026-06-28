@@ -10,6 +10,7 @@ import { Badge } from "../components/ui/badge";
 import { loadLastScan } from "../lib/scan-store";
 import { fix } from "../lib/api";
 import { getJobFindings } from "../lib/api";
+import { mapBackendFindingToUi } from "../lib/mappers";
 
 export function Fix() {
 
@@ -19,14 +20,14 @@ export function Fix() {
     (location.state as { findingIds?: string[] } | null)?.findingIds ?? [];
 
   const scan = loadLastScan();
-  const [selectedFixes, setSelectedFixes] = useState<Set<number>>(new Set([0, 1]));
+  const [selectedFixes, setSelectedFixes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [backendFixes, setBackendFixes] = useState<any[]>([]);
   const [findings, setFindings] = useState<any[]>([]);
 
   
-const displayedFixes = backendFixes.map((backendFix, index) => {
+  const displayedFixes = backendFixes.map((backendFix, index) => {
   const finding = findings.find(
     (f) => f.id === backendFix.finding_id
   );
@@ -65,7 +66,7 @@ const displayedFixes = backendFixes.map((backendFix, index) => {
 }));
 
 
-  const toggleFix = (id: number) => {
+    const toggleFix = (id: string) => {
     const newSelected = new Set(selectedFixes);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -89,11 +90,16 @@ const displayedFixes = backendFixes.map((backendFix, index) => {
 
       setBackendFixes(response.fixes || []);
       const findingsResponse: any = await getJobFindings(scan.job_id);
-            setFindings(
-              Array.isArray(findingsResponse)
-                ? findingsResponse
-                : findingsResponse.findings ?? []
-            );
+
+      const actualFindings = Array.isArray(findingsResponse)
+        ? findingsResponse
+        : findingsResponse.findings ?? [];
+
+      setFindings(
+        actualFindings.map((bf: any) =>
+          mapBackendFindingToUi(bf)
+        )      
+      );
 
     } catch (err) {
       console.error(err);
