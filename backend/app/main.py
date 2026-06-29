@@ -1025,7 +1025,12 @@ async def update_finding_status_endpoint(finding_id: str, payload: FindingStatus
             raise HTTPException(
                 status_code=404, detail=f"Finding '{finding_id}' not found."
             )
-        await update_finding_status(db, finding_id, payload.status)
+
+        await db.execute(
+            "UPDATE findings SET status = ? WHERE id = ?",
+            (payload.status, finding_id),
+        )
+        await db.commit()
     finally:
         await db.close()
 
