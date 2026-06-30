@@ -6,8 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { DiffViewer } from "../components/diff-viewer";
 import { SeverityChip } from "../components/severity-chip";
 import { Badge } from "../components/ui/badge";
-import { FixConfidence } from "../components/fix-confidence";
-
 import { loadLastScan } from "../lib/scan-store";
 import { fix } from "../lib/api";
 import { getJobFindings } from "../lib/api";
@@ -242,27 +240,6 @@ export function Fix() {
               <div className="text-sm font-medium flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3 text-status-success" />
                 Available
-
-              <DiffViewer diff={fix.diff} filename={fix.file} className="mb-4" />
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Link to="/verify">
-                  <Button>Apply Patch</Button>
-                </Link>
-                <Button variant="outline" disabled>
-                  <GitPullRequest className="h-4 w-4 mr-2" />
-                  Open PR
-                  <Badge variant="secondary" className="ml-2 text-xs">
-                    Not configured
-                  </Badge>
-                </Button>
-                <Button variant="outline">
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy Patch
-                </Button>
-            <div className="ml-4">
-              <FixConfidence confidence={fix.fix_confidence} />
-            </div>
               </div>
             </div>
           </div>
