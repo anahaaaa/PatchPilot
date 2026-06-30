@@ -42,7 +42,7 @@ export function Fix() {
   const fixes = displayedFixes.map(({ backendFix, finding }) => ({
   id: backendFix.finding_id,
 
-  title: finding?.message ?? backendFix.summary,
+  title: finding?.title ?? backendFix.summary,
 
   severity: (finding?.severity?.toLowerCase() ?? "low") as
     | "critical"
@@ -50,7 +50,7 @@ export function Fix() {
     | "medium"
     | "low",
 
-  file: finding?.file_path ?? "Unknown file",
+  file: finding?.file ?? "Unknown file",
 
   risk: "Unknown",
 
